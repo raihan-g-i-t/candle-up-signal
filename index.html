@@ -1,0 +1,463 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Candle Up Signal</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📈</text></svg>">
+<script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
+<script src="scanner.js"></script>
+<style>
+  :root {
+    --bg: #0b0e11; --panel: #181a20; --panel2: #1e2329; --line: #2b3139;
+    --text: #eaecef; --muted: #848e9c; --up: #0ecb81; --down: #f6465d;
+    --gold: #f0b90b; --blue: #3b82f6; --purple: #a855f7;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.4 -apple-system, "Segoe UI", Roboto, Arial, sans-serif; }
+  header { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between;
+    padding: 14px 20px; background: var(--panel); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 5; }
+  h1 { margin: 0; font-size: 18px; } h1 span { color: var(--gold); }
+  .status { color: var(--muted); font-size: 13px; }
+  main { padding: 16px 20px 40px; max-width: 1500px; margin: 0 auto; }
+  button { background: var(--gold); color: #000; border: 0; border-radius: 6px; padding: 8px 16px;
+    font-weight: 600; cursor: pointer; font-size: 14px; }
+  button:disabled { opacity: .5; cursor: default; }
+  button.ghost { background: var(--panel2); color: var(--text); border: 1px solid var(--line); font-weight: 500; }
+  .controls { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; margin-bottom: 14px;
+    background: var(--panel); padding: 12px 14px; border-radius: 8px; }
+  .controls label { color: var(--muted); display: flex; align-items: center; gap: 6px; font-size: 13px; }
+  input[type=number], input[type=search] { background: var(--panel2); border: 1px solid var(--line); color: var(--text);
+    border-radius: 6px; padding: 6px 8px; width: 130px; }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+  .chip { background: var(--panel2); color: var(--muted); border: 1px solid var(--line); padding: 5px 12px; border-radius: 20px; font-size: 13px; }
+  .chip.on { color: #000; background: var(--gold); border-color: var(--gold); font-weight: 600; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 14px; }
+  .tile { background: var(--panel); border-radius: 8px; padding: 12px 14px; }
+  .tile .k { color: var(--muted); font-size: 12px; } .tile .v { font-size: 24px; font-weight: 700; margin-top: 2px; }
+  .progress { height: 3px; background: var(--line); border-radius: 2px; overflow: hidden; margin-bottom: 14px; }
+  .progress div { height: 100%; width: 0; background: var(--gold); transition: width .2s; }
+  .tablewrap { background: var(--panel); border-radius: 8px; overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; min-width: 980px; }
+  th { text-align: left; color: var(--muted); font-weight: 500; font-size: 12px; padding: 10px; border-bottom: 1px solid var(--line);
+    white-space: nowrap; cursor: pointer; user-select: none; }
+  td { padding: 8px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  tbody tr { cursor: pointer; } tbody tr:hover { background: var(--panel2); }
+  tr.sel { background: #2a2512 !important; }
+  .num { text-align: right; } th.num { text-align: right; }
+  .up { color: var(--up); } .down { color: var(--down); } .muted { color: var(--muted); }
+  .pair { font-weight: 700; } .pair a { color: var(--text); text-decoration: none; } .pair a:hover { color: var(--gold); }
+  .pair small { color: var(--muted); font-weight: 400; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 700; letter-spacing: .3px; }
+  .b-signal  { background: rgba(14,203,129,.2); color: var(--up); }
+  .b-forming { background: rgba(240,185,11,.18); color: var(--gold); }
+  .b-base    { background: rgba(59,130,246,.18); color: #7fb0ff; }
+  .b-late    { background: rgba(246,70,93,.12); color: #c0707c; }
+  .b-none     { color: var(--muted); }
+  .new { background: var(--down); color: #fff; font-size: 10px; padding: 1px 5px; border-radius: 3px; margin-left: 6px; font-weight: 700; }
+  .score { display: flex; align-items: center; gap: 8px; }
+  .bar { width: 70px; height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; }
+  .bar div { height: 100%; }
+  #detail { display: none; background: var(--panel); border-radius: 8px; padding: 14px; margin-bottom: 14px; }
+  #detail .top { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px; align-items: center; margin-bottom: 8px; }
+  #detail h2 { margin: 0; font-size: 18px; }
+  #chart { height: 420px; }
+  .facts { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 13px; color: var(--muted); }
+  .facts b { color: var(--text); font-weight: 600; }
+  .help { color: var(--muted); font-size: 13px; margin-top: 16px; }
+  .help b { color: var(--text); }
+  .err { color: var(--down); }
+  @media (max-width: 640px) {
+    header { padding: 10px 12px; position: static; } main { padding: 12px 12px 40px; }
+    header .status { order: 3; width: 100%; }
+    h1 small { display: none; }
+    .controls { gap: 8px 12px; } input[type=search] { width: 110px; }
+    .tiles { grid-template-columns: repeat(2, 1fr); } .tile .v { font-size: 20px; }
+    #chart { height: 320px; }
+    table { min-width: 0; } td, th { padding: 8px 6px; }
+    .hide-sm { display: none; }
+    .bar { display: none; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>📈 Candle Up <span>Signal</span> <small class="muted" style="font-weight:400;font-size:13px">Binance Spot · 15m</small></h1>
+  <div class="status" id="status">Ready</div>
+  <div style="display:flex;gap:8px">
+    <button class="ghost" id="notifyBtn" title="Browser notification + sound when a new SIGNAL appears">🔔 Alerts off</button>
+    <button id="scanBtn">Scan now</button>
+  </div>
+</header>
+
+<main>
+  <div class="controls">
+    <label>Min 24h volume (USDT) <input type="number" id="minVol" value="1000000" step="100000" min="0"></label>
+    <label><input type="checkbox" id="auto" checked> Auto-scan</label>
+    <label title="On: judge only finished candles, scan at every 15m close. Off: include the candle that is still forming and rescan every minute (earlier, but the signal can disappear before the candle closes)">
+      <input type="checkbox" id="closedOnly" checked> Closed candles only</label>
+    <label title="Binance tokenized stocks (NVDAB, TSLAB…) go flat when the US market is closed, which looks like a fake base">
+      <input type="checkbox" id="hideStocks" checked> Hide stock tokens</label>
+    <label><input type="search" id="search" placeholder="Search coin…"></label>
+    <div class="chips" id="chips">
+      <button class="chip on" data-f="signals">Signals</button>
+      <button class="chip" data-f="signal">Signal</button>
+      <button class="chip" data-f="forming">Forming</button>
+      <button class="chip" data-f="base">In base</button>
+      <button class="chip" data-f="all">All pairs</button>
+    </div>
+  </div>
+
+  <div class="tiles">
+    <div class="tile"><div class="k">Pairs scanned (≥ min vol)</div><div class="v" id="tPairs">–</div></div>
+    <div class="tile"><div class="k">🟢 Signal (base + first push)</div><div class="v up" id="tSig">–</div></div>
+    <div class="tile"><div class="k">🟡 Forming</div><div class="v" style="color:var(--gold)" id="tForm">–</div></div>
+    <div class="tile"><div class="k">🔵 In base (watchlist)</div><div class="v" style="color:#7fb0ff" id="tBase">–</div></div>
+    <div class="tile"><div class="k">Next auto-scan</div><div class="v" id="tNext">–</div></div>
+  </div>
+
+  <div class="progress"><div id="prog"></div></div>
+
+  <section id="detail">
+    <div class="top">
+      <h2 id="dTitle"></h2>
+      <div style="display:flex;gap:8px">
+        <a id="dLink" target="_blank" rel="noopener"><button>Trade on Binance ↗</button></a>
+        <button class="ghost" id="dClose">Close</button>
+      </div>
+    </div>
+    <div class="facts" id="dFacts"></div>
+    <div id="chart" style="margin-top:10px"></div>
+  </section>
+
+  <div class="tablewrap">
+    <table>
+      <thead><tr>
+        <th class="hide-sm">#</th>
+        <th data-sort="symbol">Pair</th>
+        <th data-sort="stageRank">Signal</th>
+        <th data-sort="score">Score ▼</th>
+        <th class="num" data-sort="price">Price</th>
+        <th class="num hide-sm" data-sort="change24h">24h %</th>
+        <th class="num hide-sm" data-sort="quoteVolume">24h Vol</th>
+        <th class="num hide-sm" data-sort="boxWidthPct" title="Height of the box (the latest 7 hours)">Box height</th>
+        <th class="num hide-sm" data-sort="compression" title="Candle size in the box vs the 24h before (lower = calmer)">Candle size</th>
+        <th class="num" data-sort="boxPos" title="Where price is in the box: 0% = bottom, 100% = top">In box</th>
+        <th class="num hide-sm" data-sort="crossAgo" title="MA7 vs MA25 at the latest candle">MA7/MA25</th>
+        <th class="num hide-sm" data-sort="volRatio" title="Volume of the newest 3 candles vs the box">Push vol</th>
+        <th class="hide-sm">Last 40 candles (15m) · box = red</th>
+      </tr></thead>
+      <tbody id="rows"><tr><td colspan="12" class="muted" style="padding:30px;text-align:center">Press <b>Scan now</b> to start.</td></tr></tbody>
+    </table>
+  </div>
+
+  <div class="help">
+    <b>What is detected</b> (the pattern from your ZECUSDT chart), with the red box always at the <b>right edge of the chart</b>:
+    the latest ~7 hours form a <b>tight sideways base</b> — small candles (calmer than the day before), <b>MA7 &amp; MA25 flat and tangled</b>, quiet volume —
+    and in the newest candles price <b>starts lifting</b>: green candles closing above MA7 &amp; MA25 at the top of the box.<br>
+    <b>Signal</b> = good base + first push up at the top of the box right now · <b>Forming</b> = good base, price above the MAs but push not confirmed yet ·
+    <b>In base</b> = quiet base, no push yet (watch these) · <b>Late</b> = price already ran away from the box.<br>
+    Not financial advice — always confirm on the chart and use a stop-loss (e.g. below the box low shown in the chart).
+  </div>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const STAGE_RANK = { signal: 4, forming: 3, base: 2, late: 1, none: 0 };
+const STAGE_LABEL = { signal: "SIGNAL", forming: "FORMING", base: "IN BASE", late: "LATE", none: "—" };
+
+let results = [];                 // rows of the last scan
+const candleCache = new Map();    // symbol -> candles
+let prevStages = new Map();       // symbol -> stage of previous scan (for NEW badge / alerts)
+let filter = "signals";
+let sortKey = "default", sortDir = -1;
+let scanning = false, selected = null, chart = null;
+let alertsOn = localGet("alertsOn") === "1";
+
+function localGet(k) { try { return localStorage.getItem(k); } catch { return null; } }
+function localSet(k, v) { try { localStorage.setItem(k, v); } catch {} }
+
+// ---------- formatting ----------
+const fmtPrice = (p) => p >= 100 ? p.toFixed(2) : p >= 1 ? p.toFixed(4) : p >= 0.01 ? p.toFixed(5) : p.toPrecision(4);
+const fmtVol = (v) => v >= 1e9 ? (v / 1e9).toFixed(2) + "B" : v >= 1e6 ? (v / 1e6).toFixed(2) + "M" : (v / 1e3).toFixed(0) + "K";
+const pct = (x, d = 2) => (x >= 0 ? "+" : "") + (x * 100).toFixed(d) + "%";
+const scoreColor = (s) => s >= 65 ? "var(--up)" : s >= 50 ? "var(--gold)" : "var(--muted)";
+
+// ---------- scanning ----------
+async function scan() {
+  if (scanning) return;
+  scanning = true;
+  $("scanBtn").disabled = true;
+  const minVol = Math.max(0, parseFloat($("minVol").value) || 0);
+  const closedOnly = $("closedOnly").checked;
+  try {
+    setStatus("Loading pairs…");
+    const universe = await Scanner.loadUniverse(minVol, { includeStocks: !$("hideStocks").checked });
+    const out = [];
+    let idx = 0, done = 0, failed = 0;
+    const worker = async () => {
+      while (idx < universe.length) {
+        const p = universe[idx++];
+        try {
+          const candles = await Scanner.loadCandles(p.symbol);
+          candleCache.set(p.symbol, candles);
+          const a = Scanner.analyze(candles, { closedOnly });
+          if (a) out.push({ ...p, ...a, price: candles[candles.length - 1].close, stageRank: STAGE_RANK[a.stage] });
+        } catch (e) { failed++; }
+        done++;
+        $("prog").style.width = (done / universe.length * 100) + "%";
+        setStatus(`Scanning ${done}/${universe.length}…`);
+      }
+    };
+    await Promise.all(Array.from({ length: 8 }, worker));
+
+    const newBreakouts = [];
+    for (const r of out) {
+      const before = prevStages.get(r.symbol);
+      r.isNew = prevStages.size > 0 && (r.stage === "signal" || r.stage === "forming") && before !== r.stage;
+      if (r.isNew && r.stage === "signal") newBreakouts.push(r.symbol);
+    }
+    prevStages = new Map(out.map((r) => [r.symbol, r.stage]));
+    results = out;
+
+    const count = (s) => out.filter((r) => r.stage === s).length;
+    $("tPairs").textContent = out.length;
+    $("tSig").textContent = count("signal");
+    $("tForm").textContent = count("forming");
+    $("tBase").textContent = count("base");
+    setStatus(`Last scan ${new Date().toLocaleTimeString()} · ${out.length} pairs` + (failed ? ` · ${failed} failed` : ""));
+    render();
+    if (selected) showDetail(selected, false);
+    if (newBreakouts.length) alertUser(newBreakouts);
+  } catch (e) {
+    setStatus(`<span class="err">Scan failed: ${e.message}. Check your internet / Binance access.</span>`);
+  } finally {
+    scanning = false;
+    $("scanBtn").disabled = false;
+    setTimeout(() => ($("prog").style.width = "0"), 600);
+  }
+}
+
+function setStatus(html) { $("status").innerHTML = html; }
+
+// ---------- table ----------
+function visibleRows() {
+  const q = $("search").value.trim().toUpperCase();
+  let rows = results.filter((r) => {
+    if (q && !r.symbol.includes(q)) return false;
+    if (filter === "all") return true;
+    if (filter === "signals") return ["signal", "forming"].includes(r.stage);
+    return r.stage === filter;
+  });
+  if (sortKey === "default") {
+    rows.sort((a, b) => b.stageRank - a.stageRank || b.score - a.score);
+  } else {
+    rows.sort((a, b) => {
+      const x = a[sortKey], y = b[sortKey];
+      return (typeof x === "string" ? x.localeCompare(y) : x - y) * sortDir;
+    });
+  }
+  return rows;
+}
+
+function render() {
+  const rows = visibleRows();
+  const tb = $("rows");
+  if (!results.length) return;
+  if (!rows.length) {
+    tb.innerHTML = `<tr><td colspan="12" class="muted" style="padding:30px;text-align:center">No coins match this filter right now. The next candle may bring new ones — or check <b>In base</b>.</td></tr>`;
+    return;
+  }
+  tb.innerHTML = rows.map((r, i) => `
+    <tr data-s="${r.symbol}" class="${r.symbol === selected ? "sel" : ""}">
+      <td class="muted hide-sm">${i + 1}</td>
+      <td class="pair"><a href="${tradeUrl(r)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">${r.base}</a><small>/USDT</small></td>
+      <td><span class="badge b-${r.stage}">${STAGE_LABEL[r.stage]}</span>${r.isNew ? '<span class="new">NEW</span>' : ""}</td>
+      <td><div class="score"><b style="color:${scoreColor(r.score)};width:22px">${r.score}</b>
+          <div class="bar"><div style="width:${r.score}%;background:${scoreColor(r.score)}"></div></div></div></td>
+      <td class="num">${fmtPrice(r.price)}</td>
+      <td class="num hide-sm ${r.change24h >= 0 ? "up" : "down"}">${r.change24h >= 0 ? "+" : ""}${r.change24h.toFixed(2)}%</td>
+      <td class="num hide-sm">${fmtVol(r.quoteVolume)}</td>
+      <td class="num hide-sm">${(r.boxWidthPct * 100).toFixed(2)}%</td>
+      <td class="num hide-sm ${r.compression < 0.8 ? "up" : "muted"}">${(r.compression * 100).toFixed(0)}%</td>
+      <td class="num ${r.boxPos >= 0.8 ? "up" : "muted"}">${r.boxPos > 1 ? "above top" : (r.boxPos * 100).toFixed(0) + "%"}</td>
+      <td class="num hide-sm ${r.maBull ? "up" : "muted"}">${crossText(r)}</td>
+      <td class="num hide-sm ${r.volRatio >= 1.2 ? "up" : "muted"}">${r.volRatio.toFixed(2)}×</td>
+      <td class="hide-sm">${sparkline(r)}</td>
+    </tr>`).join("");
+}
+
+function tradeUrl(r) { return `https://www.binance.com/en/trade/${r.base}_USDT?type=spot`; }
+
+function crossText(r) {
+  if (!r.maBull) return "below";
+  return r.crossAgo >= 0 ? (r.crossAgo === 0 ? "crossed now" : `crossed ${r.crossAgo} ago`) : "above";
+}
+
+// mini candle chart of the latest candles with the box (right edge) drawn in red
+function sparkline(r) {
+  const c = (candleCache.get(r.symbol) || []).filter((k) => k.time <= r.lastTime).slice(-40);
+  if (!c.length) return "";
+  const W = 200, H = 36, n = c.length, cw = W / n;
+  const hi = Math.max(...c.map((k) => k.high)), lo = Math.min(...c.map((k) => k.low));
+  const y = (v) => H - 2 - ((v - lo) / (hi - lo || 1)) * (H - 4);
+  const bi = Math.max(0, c.findIndex((k) => k.time === r.boxStartTime));
+  const top = Math.max(0.5, y(r.boxHigh) - 1), bottom = Math.min(H - 0.5, y(r.boxLow) + 1);
+  const box = `<rect x="${bi * cw}" y="${top}" width="${W - bi * cw - 0.5}" height="${bottom - top}"
+    fill="rgba(246,70,93,.10)" stroke="rgba(246,70,93,.8)" stroke-width="1"/>`;
+  const bars = c.map((k, i) => {
+    const col = k.close >= k.open ? "#0ecb81" : "#f6465d";
+    const x = i * cw + cw / 2;
+    const t = y(Math.max(k.open, k.close)), b = y(Math.min(k.open, k.close));
+    return `<line x1="${x}" x2="${x}" y1="${y(k.high)}" y2="${y(k.low)}" stroke="${col}" stroke-width="1"/>` +
+      `<rect x="${i * cw + cw * 0.15}" y="${t}" width="${cw * 0.7}" height="${Math.max(1, b - t)}" fill="${col}"/>`;
+  }).join("");
+  return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${box}${bars}</svg>`;
+}
+
+// ---------- detail chart ----------
+function showDetail(symbol, scroll = true) {
+  const r = results.find((x) => x.symbol === symbol);
+  const candles = candleCache.get(symbol);
+  if (!r || !candles) return;
+  selected = symbol;
+  render();
+  $("detail").style.display = "block";
+  $("dTitle").innerHTML = `${r.base}/USDT <span class="badge b-${r.stage}">${STAGE_LABEL[r.stage]}</span> <span style="color:${scoreColor(r.score)}">score ${r.score}</span>`;
+  $("dLink").href = tradeUrl(r);
+  $("dFacts").innerHTML = [
+    ["Latest candle", new Date(r.lastTime * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })],
+    ["Base quality", `${r.baseScore}/60`], ["First push", `${r.push}/40`],
+    ["Box", `${fmtPrice(r.boxLow)} – ${fmtPrice(r.boxHigh)} (${(r.boxWidthPct * 100).toFixed(2)}%)`],
+    ["Candle size vs 24h", `${(r.compression * 100).toFixed(0)}%`], ["Box volume vs 24h", `${(r.quietVol * 100).toFixed(0)}%`],
+    ["MA7/MA25", crossText(r)], ["Green in last 3", `${r.greens}/3`], ["Push vol", `${r.volRatio.toFixed(2)}×`],
+    ["vs box top", pct(r.extPct)], ["Stop idea (box low)", `${fmtPrice(r.boxLow)} (${pct(r.boxLow / r.price - 1)})`],
+  ].map(([k, v]) => `<span>${k}: <b>${v}</b></span>`).join("");
+
+  if (typeof LightweightCharts === "undefined") {
+    $("chart").innerHTML = '<p class="muted">Chart library could not load (offline?). Table data still works.</p>';
+    return;
+  }
+  if (chart) chart.remove();
+  chart = LightweightCharts.createChart($("chart"), {
+    layout: { background: { color: "#181a20" }, textColor: "#848e9c" },
+    grid: { vertLines: { color: "#22262d" }, horzLines: { color: "#22262d" } },
+    timeScale: { timeVisible: true, secondsVisible: false, borderColor: "#2b3139" },
+    rightPriceScale: { borderColor: "#2b3139" },
+    localization: { priceFormatter: fmtPrice },
+    autoSize: true,
+  });
+  const tz = -new Date().getTimezoneOffset() * 60; // show local time like Binance does
+  const cs = chart.addCandlestickSeries({ upColor: "#0ecb81", downColor: "#f6465d", wickUpColor: "#0ecb81",
+    wickDownColor: "#f6465d", borderVisible: false });
+  cs.setData(candles.map((k) => ({ time: k.time + tz, open: k.open, high: k.high, low: k.low, close: k.close })));
+
+  const closes = candles.map((k) => k.close);
+  const maLine = (period, color) => {
+    const ma = Scanner.sma(closes, period);
+    chart.addLineSeries({ color, lineWidth: 1, priceLineVisible: false, lastValueVisible: false })
+      .setData(candles.map((k, i) => ({ time: k.time + tz, value: ma[i] })).filter((p) => p.value !== null));
+  };
+  maLine(7, "#f0b90b");
+  maLine(25, "#c040e0");
+
+  const vol = chart.addHistogramSeries({ priceScaleId: "vol", priceFormat: { type: "volume" }, lastValueVisible: false, priceLineVisible: false });
+  chart.priceScale("vol").applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
+  vol.setData(candles.map((k) => ({ time: k.time + tz, value: k.volume,
+    color: k.close >= k.open ? "rgba(14,203,129,.45)" : "rgba(246,70,93,.45)" })));
+
+  // draw the box over its candles (top + bottom edge), like the red box on your chart
+  const boxCandles = candles.filter((k) => k.time >= r.boxStartTime && k.time <= r.lastTime);
+  for (const price of [r.boxHigh, r.boxLow]) {
+    chart.addLineSeries({ color: "#f6465d", lineWidth: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false })
+      .setData(boxCandles.map((k) => ({ time: k.time + tz, value: price })));
+  }
+  cs.setMarkers([
+    { time: r.boxStartTime + tz, position: "belowBar", color: "#f6465d", shape: "arrowUp", text: "box start" },
+    { time: r.lastTime + tz, position: "aboveBar", color: r.stage === "signal" ? "#0ecb81" : "#f0b90b", shape: "arrowDown", text: STAGE_LABEL[r.stage] },
+  ]);
+  // zoom to the right edge of the chart, where the box is
+  chart.timeScale().setVisibleLogicalRange({ from: candles.length - 90, to: candles.length + 6 });
+  if (scroll) $("detail").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+// ---------- alerts ----------
+function updateNotifyBtn() { $("notifyBtn").textContent = alertsOn ? "🔔 Alerts on" : "🔕 Alerts off"; }
+function beep() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    [880, 1320].forEach((f, i) => {
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.frequency.value = f; o.connect(g); g.connect(ctx.destination);
+      g.gain.setValueAtTime(0.15, ctx.currentTime + i * 0.18);
+      g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i * 0.18 + 0.16);
+      o.start(ctx.currentTime + i * 0.18); o.stop(ctx.currentTime + i * 0.18 + 0.17);
+    });
+  } catch {}
+}
+function alertUser(symbols) {
+  if (!alertsOn) return;
+  beep();
+  if (window.AndroidBridge) {
+    AndroidBridge.notify("New 15m up signal", symbols.join(", "));
+  } else if ("Notification" in window && Notification.permission === "granted") {
+    new Notification("New 15m up signal", { body: symbols.join(", ") });
+  }
+  document.title = `(${symbols.length}) Candle Up Signal`;
+}
+
+// ---------- auto scan on every 15m candle close ----------
+function nextCloseMs() {
+  const q = ($("closedOnly").checked ? 15 : 1) * 60 * 1000;
+  return Math.ceil((Date.now() + 1) / q) * q + 5000; // 5s after the candle closes
+}
+let nextAt = nextCloseMs();
+setInterval(() => {
+  if (!$("auto").checked) { $("tNext").textContent = "off"; return; }
+  const left = nextAt - Date.now();
+  if (left <= 0) { nextAt = nextCloseMs(); scan(); }
+  const s = Math.max(0, Math.round(left / 1000));
+  $("tNext").textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}, 1000);
+
+// ---------- events ----------
+$("scanBtn").onclick = scan;
+$("search").oninput = render;
+$("closedOnly").onchange = () => { nextAt = nextCloseMs(); scan(); };
+$("minVol").onchange = scan;
+$("hideStocks").onchange = scan;
+$("chips").onclick = (e) => {
+  const b = e.target.closest(".chip"); if (!b) return;
+  filter = b.dataset.f;
+  document.querySelectorAll(".chip").forEach((c) => c.classList.toggle("on", c === b));
+  render();
+};
+document.querySelector("thead").onclick = (e) => {
+  const th = e.target.closest("th[data-sort]"); if (!th) return;
+  const k = th.dataset.sort;
+  if (k === "score") { sortKey = sortKey === "default" ? "score" : "default"; sortDir = -1; }
+  else { sortDir = sortKey === k ? -sortDir : -1; sortKey = k; }
+  render();
+};
+$("rows").onclick = (e) => { const tr = e.target.closest("tr[data-s]"); if (tr) showDetail(tr.dataset.s); };
+$("dClose").onclick = () => { $("detail").style.display = "none"; selected = null; if (chart) { chart.remove(); chart = null; } render(); };
+$("notifyBtn").onclick = async () => {
+  alertsOn = !alertsOn;
+  localSet("alertsOn", alertsOn ? "1" : "0");
+  if (alertsOn && window.AndroidBridge) AndroidBridge.requestNotificationPermission();
+  else if (alertsOn && "Notification" in window && Notification.permission === "default") await Notification.requestPermission();
+  if (alertsOn) beep();
+  updateNotifyBtn();
+};
+// Android back button: close the chart first, otherwise let the app exit
+window.handleBack = () => {
+  if ($("detail").style.display === "block") { $("dClose").click(); return true; }
+  return false;
+};
+window.addEventListener("focus", () => (document.title = "Candle Up Signal"));
+updateNotifyBtn();
+scan();
+</script>
+</body>
+</html>

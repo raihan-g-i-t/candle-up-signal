@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="AppTheme" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/bg</item>
+        <item name="android:colorPrimary">@color/panel</item>
+        <item name="android:colorAccent">@color/gold</item>
+    </style>
+    <color name="bg">#0b0e11</color>
+    <color name="panel">#181a20</color>
+    <color name="gold">#f0b90b</color>
+</resources>
