@@ -94,6 +94,9 @@
 <main>
   <div class="controls">
     <label>Min 24h volume (USDT) <input type="number" id="minVol" value="1000000" step="100000" min="0"></label>
+    <label title="How many of the latest 15m candles form the box (the pattern). 8 to 96.">
+      Box candles <input type="number" id="boxLen" value="20" step="1" min="8" max="96" style="width:64px">
+      <span id="boxHours" class="muted"></span></label>
     <label><input type="checkbox" id="auto" checked> Auto-scan</label>
     <label title="On: judge only finished candles, scan at every 15m close. Off: include the candle that is still forming and rescan every minute (earlier, but the signal can disappear before the candle closes)">
       <input type="checkbox" id="closedOnly" checked> Closed candles only</label>
@@ -141,12 +144,12 @@
         <th class="num" data-sort="price">Price</th>
         <th class="num hide-sm" data-sort="change24h">24h %</th>
         <th class="num hide-sm" data-sort="quoteVolume">24h Vol</th>
-        <th class="num hide-sm" data-sort="boxWidthPct" title="Height of the box (the latest 7 hours)">Box height</th>
+        <th class="num hide-sm" data-sort="boxWidthPct" title="Height of the box (the latest box candles)">Box height</th>
         <th class="num hide-sm" data-sort="compression" title="Candle size in the box vs the 24h before (lower = calmer)">Candle size</th>
         <th class="num" data-sort="boxPos" title="Where price is in the box: 0% = bottom, 100% = top">In box</th>
         <th class="num hide-sm" data-sort="crossAgo" title="MA7 vs MA25 at the latest candle">MA7/MA25</th>
         <th class="num hide-sm" data-sort="volRatio" title="Volume of the newest 3 candles vs the box">Push vol</th>
-        <th class="hide-sm">Last 40 candles (15m) · box = red</th>
+        <th class="hide-sm" id="sparkHead">Latest candles (15m) · box = red</th>
       </tr></thead>
       <tbody id="rows"><tr><td colspan="12" class="muted" style="padding:30px;text-align:center">Press <b>Scan now</b> to start.</td></tr></tbody>
     </table>
@@ -154,7 +157,7 @@
 
   <div class="help">
     <b>What is detected</b> (the pattern from your ZECUSDT chart), with the red box always at the <b>right edge of the chart</b>:
-    the latest ~7 hours form a <b>tight sideways base</b> — small candles (calmer than the day before), <b>MA7 &amp; MA25 flat and tangled</b>, quiet volume —
+    the latest <b id="helpBox">20</b> candles (set with <b>Box candles</b>) form a <b>tight sideways base</b> — small candles (calmer than the day before), <b>MA7 &amp; MA25 flat and tangled</b>, quiet volume —
     and in the newest candles price <b>starts lifting</b>: green candles closing above MA7 &amp; MA25 at the top of the box.<br>
     <b>Signal</b> = good base + first push up at the top of the box right now · <b>Forming</b> = good base, price above the MAs but push not confirmed yet ·
     <b>In base</b> = quiet base, no push yet (watch these) · <b>Late</b> = price already ran away from the box.<br>
@@ -175,6 +178,21 @@ let sortKey = "default", sortDir = -1;
 let scanning = false, selected = null, chart = null;
 let alertsOn = localGet("alertsOn") === "1";
 
+// ---------- box length setting ----------
+function boxLen() { return Scanner.clampBox(parseFloat($("boxLen").value)); }
+function showBoxLen() {
+  const b = boxLen();
+  const h = b * 15 / 60;
+  $("boxHours").textContent = `= ${Number.isInteger(h) ? h : h.toFixed(2)}h`;
+  $("helpBox").textContent = b;
+  $("sparkHead").textContent = `Last ${b + 10} candles (15m) · box = red`;
+}
+{
+  const saved = parseFloat(localGet("boxLen"));
+  if (saved) $("boxLen").value = Scanner.clampBox(saved);
+  showBoxLen();
+}
+
 function localGet(k) { try { return localStorage.getItem(k); } catch { return null; } }
 function localSet(k, v) { try { localStorage.setItem(k, v); } catch {} }
 
@@ -191,6 +209,7 @@ async function scan() {
   $("scanBtn").disabled = true;
   const minVol = Math.max(0, parseFloat($("minVol").value) || 0);
   const closedOnly = $("closedOnly").checked;
+  const box = boxLen();
   try {
     setStatus("Loading pairs…");
     const universe = await Scanner.loadUniverse(minVol, { includeStocks: !$("hideStocks").checked });
@@ -200,9 +219,9 @@ async function scan() {
       while (idx < universe.length) {
         const p = universe[idx++];
         try {
-          const candles = await Scanner.loadCandles(p.symbol);
+          const candles = await Scanner.loadCandles(p.symbol, Scanner.candlesNeeded(box));
           candleCache.set(p.symbol, candles);
-          const a = Scanner.analyze(candles, { closedOnly });
+          const a = Scanner.analyze(candles, { closedOnly, box });
           if (a) out.push({ ...p, ...a, price: candles[candles.length - 1].close, stageRank: STAGE_RANK[a.stage] });
         } catch (e) { failed++; }
         done++;
@@ -297,7 +316,7 @@ function crossText(r) {
 
 // mini candle chart of the latest candles with the box (right edge) drawn in red
 function sparkline(r) {
-  const c = (candleCache.get(r.symbol) || []).filter((k) => k.time <= r.lastTime).slice(-40);
+  const c = (candleCache.get(r.symbol) || []).filter((k) => k.time <= r.lastTime).slice(-(r.boxLen + 10));
   if (!c.length) return "";
   const W = 200, H = 36, n = c.length, cw = W / n;
   const hi = Math.max(...c.map((k) => k.high)), lo = Math.min(...c.map((k) => k.low));
@@ -378,7 +397,7 @@ function showDetail(symbol, scroll = true) {
     { time: r.lastTime + tz, position: "aboveBar", color: r.stage === "signal" ? "#0ecb81" : "#f0b90b", shape: "arrowDown", text: STAGE_LABEL[r.stage] },
   ]);
   // zoom to the right edge of the chart, where the box is
-  chart.timeScale().setVisibleLogicalRange({ from: candles.length - 90, to: candles.length + 6 });
+  chart.timeScale().setVisibleLogicalRange({ from: candles.length - Math.max(60, r.boxLen * 2 + 20), to: candles.length + 6 });
   if (scroll) $("detail").scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
@@ -426,6 +445,12 @@ $("scanBtn").onclick = scan;
 $("search").oninput = render;
 $("closedOnly").onchange = () => { nextAt = nextCloseMs(); scan(); };
 $("minVol").onchange = scan;
+$("boxLen").onchange = () => {
+  $("boxLen").value = boxLen();
+  localSet("boxLen", boxLen());
+  showBoxLen();
+  scan();
+};
 $("hideStocks").onchange = scan;
 $("chips").onclick = (e) => {
   const b = e.target.closest(".chip"); if (!b) return;

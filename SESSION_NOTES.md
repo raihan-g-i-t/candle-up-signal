@@ -41,9 +41,10 @@ The user corrected the pattern twice during the session, so it was defined three
 ### Windows
 
 Settings live in `CFG`:
-- `box = 28` candles (7h): the base, **ending at the newest closed candle**.
+- `box`: the base, **ending at the newest closed candle**. **User setting "Box candles"** on the dashboard, default **20** (5h), allowed range 8–96, saved in the browser.
 - `edge = 3`: the newest 3 candles of the box, where the first push shows up.
-- `ref = 96` candles (24h) before the box: the baseline for "normal" candle size and volume.
+- `ref = 96` candles (24h) before the box: the baseline for "normal" candle size and volume. It's only used for comparison, never as part of the pattern.
+- Candles downloaded per pair = `ref + box + 1` (the +1 is the still-forming candle). That's 117 for box 20, down from 200 before.
 - The **core box** is the box without the edge candles. It's used for box high, box low and flatness.
 
 ### Score = base quality (max 60) + first push (max 40), scaled by a "late" factor
@@ -89,15 +90,15 @@ Within a stage, coins are sorted by score.
 - **Tokenized stocks are hidden by default** (NVDAB, TSLAB, SPYB… 77 pairs). All of them carry the Binance permission group `TRD_GRP_261`. They go flat whenever the US market is closed, which fakes a "quiet base". The dashboard has a "Hide stock tokens" toggle.
 
 ### Data
-- Klines: `/api/v3/klines?interval=15m&limit=200`, with 8 requests in parallel.
-- A full scan of ~140–160 pairs takes about 5 seconds and is far below Binance rate limits.
+- Klines: `/api/v3/klines?interval=15m&limit=<ref+box+1>`, with 8 requests in parallel.
+- A full scan of ~145 pairs takes about 2–3 seconds and is far below Binance rate limits.
 - By default only **closed** candles are judged. Unticking "Closed candles only" includes the candle still forming and rescans every minute.
 
 ---
 
 ## 4. Verification done
 
-### Backtest on the user's own chart (ZECUSDT, 16 Sep 2026, times UTC+6)
+### Backtest on the user's own chart (ZECUSDT, 16 Sep 2026, times UTC+6, box = 28 candles, the earlier default)
 
 | Time | Score | Stage |
 |---|---|---|
@@ -109,7 +110,7 @@ Within a stage, coins are sorted by score.
 | 11:30 | 63 | FORMING (leaving the box) |
 | 13:00 | 55 | none (rally already out of the box) |
 
-### Live scan (17 Sep 2026, ~14:30 UTC+6, stocks hidden)
+### Live scan (17 Sep 2026, ~14:30 UTC+6, stocks hidden, box = 28)
 - 138 pairs scanned: 5 SIGNAL, 29 FORMING, 60 IN BASE.
 - Top SIGNALs: TAO, AVAX, ENA, CHIP, ADA.
 
@@ -125,6 +126,7 @@ Within a stage, coins are sorted by score.
 ## 5. Dashboard features (`index.html`)
 - **Controls:**
   - Min 24h volume
+  - **Box candles** (default 20; shows the matching hours)
   - Auto-scan (every 15m candle close, +5s)
   - Closed candles only
   - Hide stock tokens
@@ -134,7 +136,7 @@ Within a stage, coins are sorted by score.
 - **Table:**
   - Pair (links to the Binance trade page), stage badge, NEW badge, score bar, price, 24h %, 24h volume
   - Box height, candle size vs 24h, position in the box, MA7/MA25, push volume
-  - Mini chart of the last 40 candles with the **red box**
+  - Mini chart of the last (box + 10) candles with the **red box**
   - Click a column header to sort.
 - **Row click:** full 15m chart with MA7 (yellow), MA25 (purple), volume, the red box drawn over its candles, "box start" and stage markers, stats, and the box low as a stop-loss idea.
 - **Alerts (🔔):** sound plus a browser notification, or an Android notification in the app, when a coin newly becomes SIGNAL.
@@ -156,7 +158,7 @@ Within a stage, coins are sorted by score.
 - **Re-run `build.sh` after any change to `index.html` or `scanner.js`.**
 
 ### App details
-- Package `com.candleup.signal`, version 1.0, minSdk 26 (Android 8.0), targetSdk 36.
+- Package `com.candleup.signal`, version 1.1 (versionCode 2; bump it on each rebuild so updates install), minSdk 26 (Android 8.0), targetSdk 36.
 - `MainActivity`:
   - Full-screen WebView loading `file:///android_asset/index.html`.
   - External links open in the Binance app or browser.
@@ -183,6 +185,19 @@ Within a stage, coins are sorted by score.
   - the bundled assets running in Chrome at phone width
 
 ---
+
+### Box-length setting check (added later in the session)
+
+ZECUSDT backtest with different box lengths:
+
+| Box | 08:00 | 09:00 | 09:30 | 10:00 | 10:45 | 11:30 | 13:00 |
+|---|---|---|---|---|---|---|---|
+| 20 (default) | 46 in base | 66 forming | 66 forming | **77 SIGNAL** | **79 SIGNAL** | 67 forming | 48 none |
+| 12 | 51 in base | 69 forming | **73 SIGNAL** | **77 SIGNAL** | **75 SIGNAL** | 61 none | 44 none |
+| 28 | 36 none | 55 none | **68 SIGNAL** | **73 SIGNAL** | **73 SIGNAL** | 63 forming | 55 none |
+
+- Live scan on 17 Sep ~18:40 UTC+6 gave 24–29 SIGNALs at every box size. The whole market (BTC, ETH, SOL…) was lifting out of a quiet period at that time.
+- Tested in headless Chrome: the setting changes the box, the candles downloaded (117 for 20, 109 for 12), the mini chart and the chart zoom.
 
 ## 7. Known limitations
 - The app and web page only scan **while open**. The app keeps the screen on for this. There are no background scans or alerts when closed; that would need an Android foreground service.

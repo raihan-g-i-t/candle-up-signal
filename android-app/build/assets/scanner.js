@@ -1,7 +1,7 @@
 /*
  * Pattern scanner: quiet base at the END of the 15m chart (from the marked ZECUSDT chart).
  *
- *   1. BASE   - the latest ~7 hours are a tight sideways box: small candles (less volatile than
+ *   1. BASE   - the latest N candles (user setting, default 20 = 5h) are a tight sideways box: small candles (less volatile than
  *               the day before), MA7 & MA25 flat and tangled together, quiet volume.
  *   2. PUSH   - in the newest candles price starts lifting: green candles closing above MA7 and
  *               MA25 in the upper part of the box, MA7 turning above MA25.
@@ -19,10 +19,16 @@
   ]);
 
   const CFG = {
-    box: 28,  // the base = last 28 candles (7 hours), ending at the newest candle
-    edge: 3,  // newest 3 candles of the box = where the first push shows up
-    ref: 96,  // 24 hours before the box = "normal" volatility / volume
+    box: 20,     // default box = last 20 candles (5 hours), ending at the newest candle (user setting)
+    minBox: 8,
+    maxBox: 96,
+    edge: 3,     // newest 3 candles of the box = where the first push shows up
+    ref: 96,     // 24 hours before the box = "normal" candle size / volume to compare against
   };
+  const clampBox = (b) => Math.max(CFG.minBox, Math.min(CFG.maxBox, Math.round(b) || CFG.box));
+
+  // candles to download: 24h reference + box + 1 for the candle that is still forming
+  const candlesNeeded = (box) => CFG.ref + clampBox(box) + 1;
 
   // ---------- helpers ----------
   const clamp01 = (x) => Math.max(0, Math.min(1, x));
@@ -91,7 +97,7 @@
       .sort((a, b) => b.quoteVolume - a.quoteVolume);
   }
 
-  async function loadCandles(symbol, limit = 200) {
+  async function loadCandles(symbol, limit = candlesNeeded(CFG.box)) {
     const raw = await getJSON(`/api/v3/klines?symbol=${symbol}&interval=15m&limit=${limit}`);
     return raw.map((k) => ({
       time: Math.floor(k[0] / 1000),
@@ -104,12 +110,13 @@
   // ---------- pattern analysis ----------
   // The consolidation box is always the LATEST candles (right edge of the chart), so a coin
   // ranks high only while it is sitting in the quiet base now / just starting to lift out of it.
-  function analyze(allCandles, { closedOnly = true } = {}) {
+  function analyze(allCandles, { closedOnly = true, box: boxLen = CFG.box } = {}) {
     let candles = allCandles;
     if (closedOnly && candles.length && candles[candles.length - 1].closeTime > Date.now()) {
       candles = candles.slice(0, -1);
     }
-    const need = CFG.box + CFG.ref;
+    const BOX = clampBox(boxLen);
+    const need = BOX + CFG.ref;
     if (candles.length < need) return null;
 
     const n = candles.length;
@@ -120,7 +127,7 @@
     const isGreen = (c) => c.close > c.open;
     const last = candles[L];
 
-    const boxStart = n - CFG.box;
+    const boxStart = n - BOX;
     const box = candles.slice(boxStart);                   // the base, ending at the last candle
     const core = candles.slice(boxStart, n - CFG.edge);    // base without the newest candles
     const edge = candles.slice(n - CFG.edge);              // newest candles (the first push)
@@ -201,11 +208,12 @@
       boxHigh, boxLow, boxPos, extPct: (last.close - boxHigh) / boxHigh,
       crossAgo, maBull, greens,
       boxStartTime: candles[boxStart].time,
+      boxLen: BOX,
       lastClose: last.close, lastTime: last.time,
     };
   }
 
-  const api = { CFG, loadUniverse, loadCandles, analyze, sma };
+  const api = { CFG, clampBox, candlesNeeded, loadUniverse, loadCandles, analyze, sma };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.Scanner = api;
 })(typeof window !== "undefined" ? window : globalThis);
